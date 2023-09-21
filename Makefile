@@ -4,7 +4,7 @@ create_files:
 
 .PHONY: clean_files
 clean_files:
-	rm -rf ./hot/*
+	rm -rf ./hot/* ./backup/*
 
 .PHONY: compare_files
 compare_files:

@@ -4,13 +4,22 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/nikonok/backupper/watchers"
 )
 
 const (
-	workChanSize = 10
+	workChanSize = 100
 )
 
 type FileInfo struct {
@@ -30,50 +39,44 @@ type AppConfig struct {
 	CopyWork chan string
 }
 
-func runWatcher(ctx context.Context, appCfg *AppConfig, wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+func runInitialCheck(ctx context.Context, appCfg *AppConfig) {
+	files, err := os.ReadDir(appCfg.HotFolderPath)
+	if err != nil {
+		panic(err)
+	}
 
-		ticker := time.NewTicker(appCfg.TickerDuration)
-		for range ticker.C {
-			fmt.Println("Start reading dir")
+	needsBackup := func(srcPath, dstPath string) bool {
+		srcInfo, err := os.Stat(srcPath)
+		if err != nil {
+			return false
+		}
 
-			files, err := os.ReadDir(appCfg.HotFolderPath)
+		dstInfo, err := os.Stat(dstPath)
+		if err != nil || os.IsNotExist(err) {
+			// If the destination backup file doesn't exist, then we need a backup.
+			return true
+		}
+
+		return srcInfo.ModTime().After(dstInfo.ModTime())
+	}
+
+	for _, file := range files {
+		if file.Type().IsRegular() {
+			fmt.Println("Initial processing " + file.Name())
+
+			fileInfo, err := file.Info()
 			if err != nil {
 				panic(err)
 			}
 
-			for _, file := range files {
-				if file.Type().IsRegular() {
-					fmt.Println("Processing " + file.Name())
+			srcPath := filepath.Join(appCfg.HotFolderPath, file.Name())
+			dstPath := filepath.Join(appCfg.BackupFolderPath, file.Name()+".bak")
 
-					fileInfo, err := file.Info()
-					if err != nil {
-						panic(err)
-					}
-
-					if savedFileInfo, ok := appCfg.FileCollection[fileInfo.Name()]; !ok {
-						appCfg.FileCollection[fileInfo.Name()] = FileInfo{
-							FileName:         fileInfo.Name(),
-							ModificationTime: fileInfo.ModTime(),
-							IsProcessed:      false,
-						}
-
-						appCfg.CopyWork <- fileInfo.Name()
-					} else if savedFileInfo.ModificationTime.Before(fileInfo.ModTime()) {
-						savedFileInfo.IsProcessed = false
-						savedFileInfo.ModificationTime = fileInfo.ModTime()
-						appCfg.FileCollection[fileInfo.Name()] = savedFileInfo
-
-						appCfg.CopyWork <- fileInfo.Name()
-					}
-				}
+			if needsBackup(srcPath, dstPath) {
+				appCfg.CopyWork <- fileInfo.Name()
 			}
-
-			fmt.Println("End reading dir")
 		}
-	}()
+	}
 }
 
 func copyFile(srcPath string, destPath string) error {
@@ -124,7 +127,7 @@ func runCopier(ctx context.Context, appCfg *AppConfig, wg *sync.WaitGroup) {
 			fmt.Println("Copier new work " + fileName)
 			srcPath := appCfg.HotFolderPath + "/" + fileName
 			destPath := appCfg.BackupFolderPath + "/" + fileName + ".bak"
-			err := copyFile(srcPath, destPath);
+			err := copyFile(srcPath, destPath)
 			if err != nil {
 				fmt.Println("Error while coping " + err.Error())
 			}
@@ -133,21 +136,47 @@ func runCopier(ctx context.Context, appCfg *AppConfig, wg *sync.WaitGroup) {
 }
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		fmt.Println("Caught signal: " + sig.String())
+		cancel()
+	}()
+
 	appCfg := AppConfig{
 		HotFolderPath:    "./hot",
 		BackupFolderPath: "./backup",
-		TickerDuration:   10 * time.Second,
+		TickerDuration:   1 * time.Second,
 		FileCollection:   make(map[string]FileInfo),
 		CopyWork:         make(chan string, workChanSize),
 	}
-	ctx := context.Background()
+
+	var err error
+
+	appCfg.HotFolderPath, err = filepath.Abs(appCfg.HotFolderPath)
+	if err != nil {
+		panic(err)
+	}
+
+	appCfg.BackupFolderPath, err = filepath.Abs(appCfg.BackupFolderPath)
+	if err != nil {
+		panic(err)
+	}
 
 	var wg sync.WaitGroup
 
-	runCopier(ctx, &appCfg, &wg)
-	runWatcher(ctx, &appCfg, &wg)
+	// runCopier(ctx, &appCfg, &wg)
+	// runInitialCheck(ctx, &appCfg)
+
+	// watcher := watchers.CreateSysCallWatcher(appCfg.HotFolderPath, appCfg.CopyWork)
+	// watcher := watchers.CreateEventWatcher(appCfg.HotFolderPath, appCfg.CopyWork)
+	watcher := watchers.CreateTimerWatcher(appCfg.HotFolderPath, appCfg.CopyWork, appCfg.TickerDuration)
+	watchers.StartWatcher(watcher, ctx, &wg)
 
 	wg.Wait()
 
-	fmt.Println("hello world")
+	fmt.Println("End of program")
 }
