@@ -2,13 +2,14 @@ package watchers
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 	"unsafe"
+
+	log "github.com/nikonok/backupper/logger"
 )
 
 const (
@@ -16,31 +17,36 @@ const (
 )
 
 type SysCallWatcher struct {
+	logger log.Logger
+
 	hotFolderPath string
-	copyWork      chan string
+	workChan      chan string
 	buf           []byte
 	fd            int
 }
 
-func CreateSysCallWatcher(hotFolderPath string, copyWork chan string) Watcher {
+func CreateSysCallWatcher(hotFolderPath string, workChan chan string, logger log.Logger) Watcher {
 	return &SysCallWatcher{
+		logger:        logger,
 		hotFolderPath: hotFolderPath,
-		copyWork:      copyWork,
+		workChan:      workChan,
 		buf:           make([]byte, BUFFER_SIZE),
 	}
 }
 
 func (watcher *SysCallWatcher) watch(ctx context.Context) {
+	watcher.logger.LogDebug("Starting Watcher")
+
 	var err error
 	watcher.fd, err = syscall.InotifyInit1(syscall.IN_NONBLOCK)
 	if err != nil {
-		panic(err)
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 	defer syscall.Close(watcher.fd)
 
 	wd, err := syscall.InotifyAddWatch(watcher.fd, watcher.hotFolderPath, syscall.IN_CREATE|syscall.IN_MODIFY)
 	if err != nil {
-		panic(err)
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	defer syscall.InotifyRmWatch(watcher.fd, uint32(wd))
@@ -52,7 +58,7 @@ func (watcher *SysCallWatcher) runLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Exiting watcher")
+			watcher.logger.LogDebug("Stopping Watcher")
 			return
 		default:
 			n, err := syscall.Read(watcher.fd, watcher.buf[:])
@@ -60,7 +66,7 @@ func (watcher *SysCallWatcher) runLoop(ctx context.Context) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			} else if err != nil {
-				panic(err)
+				watcher.logger.LogError("Watcher fatal: " + err.Error())
 			}
 
 			watcher.precessEvent(uint32(n))
@@ -88,11 +94,11 @@ func (watcher *SysCallWatcher) processFile(fileName string) {
 
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
-		panic(err.Error())
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	if fileInfo.Mode().IsRegular() {
-		fmt.Printf("Working with: %s\n", fileName)
-		watcher.copyWork <- fileInfo.Name()
+		watcher.logger.LogInfo("Watcher is sending new work for: " + fileName)
+		watcher.workChan <- fileInfo.Name()
 	}
 }

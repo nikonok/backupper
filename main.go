@@ -1,21 +1,22 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
-	"github.com/fsnotify/fsnotify"
+	"github.com/nikonok/backupper/controllers"
+	"github.com/nikonok/backupper/initial"
+	log "github.com/nikonok/backupper/logger"
 	"github.com/nikonok/backupper/watchers"
+	"github.com/nikonok/backupper/workers"
 )
 
 const (
@@ -31,6 +32,7 @@ type FileInfo struct {
 type AppConfig struct {
 	HotFolderPath    string
 	BackupFolderPath string
+	LoggerFilePath   string
 
 	TickerDuration time.Duration
 
@@ -39,119 +41,18 @@ type AppConfig struct {
 	CopyWork chan string
 }
 
-func runInitialCheck(ctx context.Context, appCfg *AppConfig) {
-	files, err := os.ReadDir(appCfg.HotFolderPath)
-	if err != nil {
-		panic(err)
-	}
-
-	needsBackup := func(srcPath, dstPath string) bool {
-		srcInfo, err := os.Stat(srcPath)
-		if err != nil {
-			return false
-		}
-
-		dstInfo, err := os.Stat(dstPath)
-		if err != nil || os.IsNotExist(err) {
-			// If the destination backup file doesn't exist, then we need a backup.
-			return true
-		}
-
-		return srcInfo.ModTime().After(dstInfo.ModTime())
-	}
-
-	for _, file := range files {
-		if file.Type().IsRegular() {
-			fmt.Println("Initial processing " + file.Name())
-
-			fileInfo, err := file.Info()
-			if err != nil {
-				panic(err)
-			}
-
-			srcPath := filepath.Join(appCfg.HotFolderPath, file.Name())
-			dstPath := filepath.Join(appCfg.BackupFolderPath, file.Name()+".bak")
-
-			if needsBackup(srcPath, dstPath) {
-				appCfg.CopyWork <- fileInfo.Name()
-			}
-		}
-	}
-}
-
-func copyFile(srcPath string, destPath string) error {
-	srcFile, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	bufReader := bufio.NewReader(srcFile)
-	bufWriter := bufio.NewWriter(destFile)
-
-	_, err = bufReader.WriteTo(bufWriter)
-	if err != nil {
-		return err
-	}
-
-	err = bufWriter.Flush()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func runCopier(ctx context.Context, appCfg *AppConfig, wg *sync.WaitGroup) {
-	if _, err := os.Stat(appCfg.BackupFolderPath); os.IsNotExist(err) {
-		err := os.MkdirAll(appCfg.BackupFolderPath, 0755) // 0755 is the file permission
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("Back up dir created")
-	} else {
-		fmt.Println("Back up dir exists")
-	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		for fileName := range appCfg.CopyWork {
-			fmt.Println("Copier new work " + fileName)
-			srcPath := appCfg.HotFolderPath + "/" + fileName
-			destPath := appCfg.BackupFolderPath + "/" + fileName + ".bak"
-			err := copyFile(srcPath, destPath)
-			if err != nil {
-				fmt.Println("Error while coping " + err.Error())
-			}
-		}
-	}()
-}
-
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
+	// TODO: remove
 	go func() {
-		sig := <-sigs
-		fmt.Println("Caught signal: " + sig.String())
-		cancel()
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
+	// TODO: normal config
 	appCfg := AppConfig{
 		HotFolderPath:    "./hot",
 		BackupFolderPath: "./backup",
 		TickerDuration:   1 * time.Second,
-		FileCollection:   make(map[string]FileInfo),
-		CopyWork:         make(chan string, workChanSize),
+		LoggerFilePath:   "./log.txt",
 	}
 
 	var err error
@@ -165,18 +66,55 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	//
+
+	logger, err := log.CreateDualLogger(appCfg.LoggerFilePath, log.Debug)
+	if err != nil {
+		fmt.Println("Cannot init logger")
+		panic(err)
+	}
+
+	defer func() {
+		if err := logger.Close(); err != nil {
+			fmt.Println("Cannot close logger")
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		logger.LogInfo("Caught signal: " + sig.String())
+		cancel()
+	}()
 
 	var wg sync.WaitGroup
 
-	// runCopier(ctx, &appCfg, &wg)
-	// runInitialCheck(ctx, &appCfg)
+	watcherChan := make(chan string, workChanSize)
+	copyChan := make(chan string, workChanSize)
+	deleteChan := make(chan string, workChanSize)
 
-	// watcher := watchers.CreateSysCallWatcher(appCfg.HotFolderPath, appCfg.CopyWork)
-	// watcher := watchers.CreateEventWatcher(appCfg.HotFolderPath, appCfg.CopyWork)
-	watcher := watchers.CreateTimerWatcher(appCfg.HotFolderPath, appCfg.CopyWork, appCfg.TickerDuration)
+	controller := controllers.CreateController(watcherChan, copyChan, deleteChan, logger)
+	resultChan := controller.GetResultChan()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		controller.Run(ctx)
+	}()
+
+	copyWorker := workers.CreateCopyWorker(appCfg.HotFolderPath, appCfg.BackupFolderPath, copyChan, resultChan, logger)
+	deleteWorker := workers.CreateDeleteWorker(appCfg.HotFolderPath, appCfg.BackupFolderPath, deleteChan, resultChan, logger)
+
+	workers.StartWorker(copyWorker, ctx, &wg)
+	workers.StartWorker(deleteWorker, ctx, &wg)
+
+	initial.CreateInitialChecker(appCfg.HotFolderPath, appCfg.BackupFolderPath, watcherChan, logger).Check(ctx)
+
+	watcher := watchers.CreateSysCallWatcher(appCfg.HotFolderPath, watcherChan, logger)
 	watchers.StartWatcher(watcher, ctx, &wg)
 
 	wg.Wait()
-
-	fmt.Println("End of program")
 }

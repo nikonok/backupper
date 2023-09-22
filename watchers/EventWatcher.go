@@ -2,37 +2,43 @@ package watchers
 
 import (
 	"context"
-	"fmt"
 	"os"
+
+	log "github.com/nikonok/backupper/logger"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 type EventWatcher struct {
+	logger log.Logger
+
 	hotFolderPath string
-	copyWork      chan string
+	workChan      chan string
 	fsWatcher     *fsnotify.Watcher
 }
 
-func CreateEventWatcher(hotFolderPath string, copyWork chan string) Watcher {
+func CreateEventWatcher(hotFolderPath string, workChan chan string, logger log.Logger) Watcher {
 	return &EventWatcher{
+		logger:        logger,
 		hotFolderPath: hotFolderPath,
-		copyWork:      copyWork,
+		workChan:      workChan,
 	}
 }
 
 func (watcher *EventWatcher) watch(ctx context.Context) {
+	watcher.logger.LogDebug("Starting Watcher")
+
 	var err error
 	watcher.fsWatcher, err = fsnotify.NewWatcher()
 	if err != nil {
-		panic(err)
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	defer watcher.fsWatcher.Close()
 
 	err = watcher.fsWatcher.Add(watcher.hotFolderPath)
 	if err != nil {
-		panic(err)
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	watcher.runLoop(ctx)
@@ -42,7 +48,7 @@ func (watcher *EventWatcher) runLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Exiting watcher")
+			watcher.logger.LogDebug("Stopping Watcher")
 			return
 		case event, ok := <-watcher.fsWatcher.Events:
 			if !ok {
@@ -55,7 +61,7 @@ func (watcher *EventWatcher) runLoop(ctx context.Context) {
 			if !ok {
 				return
 			}
-			fmt.Println("Error:" + err.Error())
+			watcher.logger.LogWarn("Watcher warning: " + err.Error())
 		}
 	}
 }
@@ -63,11 +69,11 @@ func (watcher *EventWatcher) runLoop(ctx context.Context) {
 func (watcher *EventWatcher) processFile(fileName string) {
 	fileInfo, err := os.Stat(fileName)
 	if err != nil {
-		panic(err.Error())
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	if fileInfo.Mode().IsRegular() {
-		fmt.Printf("Working with: %s\n", fileName)
-		watcher.copyWork <- fileInfo.Name()
+		watcher.logger.LogInfo("Watcher is sending new work for: " + fileName)
+		watcher.workChan <- fileInfo.Name()
 	}
 }

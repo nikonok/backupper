@@ -2,10 +2,11 @@ package watchers
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"time"
+
+	log "github.com/nikonok/backupper/logger"
 )
 
 type fileInfo struct {
@@ -13,35 +14,39 @@ type fileInfo struct {
 }
 
 type TimerWatcher struct {
+	logger log.Logger
+
 	hotFolderPath  string
-	copyWork       chan string
+	workChan       chan string
 	tickerDuration time.Duration
 	fileCollection map[string]fileInfo
 
 	ticker *time.Ticker
 }
 
-func CreateTimerWatcher(hotFolderPath string, copyWork chan string, tickerDuration time.Duration) Watcher {
+func CreateTimerWatcher(hotFolderPath string, workChan chan string, tickerDuration time.Duration, logger log.Logger) Watcher {
 	return &TimerWatcher{
+		logger:         logger,
 		hotFolderPath:  hotFolderPath,
-		copyWork:       copyWork,
+		workChan:       workChan,
 		tickerDuration: tickerDuration,
 		fileCollection: make(map[string]fileInfo),
 	}
 }
 
 func (watcher *TimerWatcher) watch(ctx context.Context) {
+	watcher.logger.LogDebug("Starting Watcher")
+
 	watcher.ticker = time.NewTicker(watcher.tickerDuration)
 	watcher.runLoop(ctx)
 }
 
 func (watcher *TimerWatcher) runLoop(ctx context.Context) {
 	for range watcher.ticker.C {
-		fmt.Println("Start reading dir")
 
 		files, err := os.ReadDir(watcher.hotFolderPath)
 		if err != nil {
-			panic(err)
+			watcher.logger.LogError("Watcher fatal: " + err.Error())
 		}
 
 		for _, file := range files {
@@ -49,17 +54,14 @@ func (watcher *TimerWatcher) runLoop(ctx context.Context) {
 				watcher.processFile(file)
 			}
 		}
-
-		fmt.Println("End reading dir")
 	}
 }
 
 func (watcher *TimerWatcher) processFile(file fs.DirEntry) {
-	fmt.Println("Processing " + file.Name())
 
 	fInfo, err := file.Info()
 	if err != nil {
-		panic(err)
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
 
 	if savedFileInfo, ok := watcher.fileCollection[fInfo.Name()]; !ok {
@@ -67,11 +69,13 @@ func (watcher *TimerWatcher) processFile(file fs.DirEntry) {
 			ModificationTime: fInfo.ModTime(),
 		}
 
-		watcher.copyWork <- fInfo.Name()
+		watcher.logger.LogInfo("Watcher is sending new work for: " + fInfo.Name())
+		watcher.workChan <- fInfo.Name()
 	} else if savedFileInfo.ModificationTime.Before(fInfo.ModTime()) {
 		savedFileInfo.ModificationTime = fInfo.ModTime()
 		watcher.fileCollection[fInfo.Name()] = savedFileInfo
 
-		watcher.copyWork <- fInfo.Name()
+		watcher.logger.LogInfo("Watcher is sending new work for: " + fInfo.Name())
+		watcher.workChan <- fInfo.Name()
 	}
 }
