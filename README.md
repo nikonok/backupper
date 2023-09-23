@@ -14,6 +14,9 @@ Welcome to Backupper! The app for making backup easy and fast!
 * All non-regular files are ignore (e.g. dirs, device files)
 * Files in backup dir supposed to be maintained only by app (**DO NOT CHANGE BACKUP DIR FILES POLICY =)**)
 * Create file with name `delete_<filename>` and `<filename>` will be removed in `hot` and `backup` dirs
+* Create file with name `delete_<RFC3339>_<filename>` and `<filename>` will be removed in `hot` and `backup` dirs at `<RFC3339>`
+
+> example of `delete_<RFC3339>_<filename>`: `delete_2023-09-23T18:54:30+02:00_file_2`
 
 ## Usage
 

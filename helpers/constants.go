@@ -18,6 +18,8 @@ const (
 	DELETE_WORKERS_AMOUNT = 5
 	// amount of Copy workers
 	COPY_WORKERS_AMOUNT = 10
+	// regex for date and time parsing
+	DATE_TIME_REGEX=`^(delete_)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})(.*)$`
 
 	// Default args
 	// default path to log file

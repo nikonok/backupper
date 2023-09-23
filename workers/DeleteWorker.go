@@ -50,9 +50,19 @@ func removeFile(path string) error {
 	return os.Remove(path)
 }
 
+func getFilenameIfScheduledDelete(work string) (string, bool) {
+	_, filename, isParsed := helpers.ParseScheduledDelete(work)
+	return filename, isParsed
+}
+
 func (worker *DeleteWorker) handleWork(work string) {
-	originalFile := filepath.Join(worker.hotFolderPath, work)
-	backupFile := filepath.Join(worker.backupFolderPath, work+".bak")
+	filename := work
+	if parsedFilename, ok := getFilenameIfScheduledDelete(helpers.DELETE_PREFIX+work); ok {
+		filename = parsedFilename
+	}
+
+	originalFile := filepath.Join(worker.hotFolderPath, filename)
+	backupFile := filepath.Join(worker.backupFolderPath, filename+".bak")
 	deleteFile := filepath.Join(worker.hotFolderPath, helpers.DELETE_PREFIX+work)
 
 	if err := removeFile(originalFile); err != nil {
