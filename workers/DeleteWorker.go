@@ -5,11 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nikonok/backupper/helpers"
 	log "github.com/nikonok/backupper/logger"
-)
-
-const (
-	DELETE_PREFIX = "delete_"
 )
 
 type DeleteWorker struct {
@@ -22,12 +19,12 @@ type DeleteWorker struct {
 	resultChan chan string
 }
 
-func CreateDeleteWorker(hotFolderPath, backupFolderPath string, workChan, resultChan chan string, logger log.Logger) Worker {
+func CreateDeleteWorker(appCfg *helpers.AppConfig, workChan, resultChan chan string, logger log.Logger) Worker {
 	return &DeleteWorker{
 		logger: logger,
 
-		hotFolderPath:    hotFolderPath,
-		backupFolderPath: backupFolderPath,
+		hotFolderPath:    appCfg.HotFolderPath,
+		backupFolderPath: appCfg.BackupFolderPath,
 
 		workChan:   workChan,
 		resultChan: resultChan,
@@ -56,7 +53,7 @@ func removeFile(path string) error {
 func (worker *DeleteWorker) handleWork(work string) {
 	originalFile := filepath.Join(worker.hotFolderPath, work)
 	backupFile := filepath.Join(worker.backupFolderPath, work+".bak")
-	deleteFile := filepath.Join(worker.hotFolderPath, DELETE_PREFIX+work)
+	deleteFile := filepath.Join(worker.hotFolderPath, helpers.DELETE_PREFIX+work)
 
 	if err := removeFile(originalFile); err != nil {
 		worker.logger.LogWarn("DeleteWorker error on original file: " + err.Error())

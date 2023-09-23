@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nikonok/backupper/helpers"
 	log "github.com/nikonok/backupper/logger"
 )
 
@@ -19,12 +20,12 @@ type CopyWorker struct {
 	resultChan chan string
 }
 
-func CreateCopyWorker(hotFolderPath, backupFolderPath string, workChan, resultChan chan string, logger log.Logger) Worker {
+func CreateCopyWorker(appCfg *helpers.AppConfig, workChan, resultChan chan string, logger log.Logger) Worker {
 	return &CopyWorker{
 		logger: logger,
 
-		hotFolderPath:    hotFolderPath,
-		backupFolderPath: backupFolderPath,
+		hotFolderPath:    appCfg.HotFolderPath,
+		backupFolderPath: appCfg.BackupFolderPath,
 
 		workChan:   workChan,
 		resultChan: resultChan,

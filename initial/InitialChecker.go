@@ -7,11 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nikonok/backupper/helpers"
 	log "github.com/nikonok/backupper/logger"
-)
-
-const (
-	DELETE_PREFIX = "delete_"
 )
 
 type InitialChecker struct {
@@ -22,11 +19,11 @@ type InitialChecker struct {
 	workChan         chan string
 }
 
-func CreateInitialChecker(hotFolderPath, backupFolderPath string, workChan chan string, logger log.Logger) *InitialChecker {
+func CreateInitialChecker(appCfg *helpers.AppConfig, workChan chan string, logger log.Logger) *InitialChecker {
 	return &InitialChecker{
-		logger:     logger,
-		hotFolderPath:    hotFolderPath,
-		backupFolderPath: backupFolderPath,
+		logger:           logger,
+		hotFolderPath:    appCfg.HotFolderPath,
+		backupFolderPath: appCfg.BackupFolderPath,
 		workChan:         workChan,
 	}
 }
@@ -49,7 +46,7 @@ func isBackupNeeded(srcPath, dstPath string) (bool, error) {
 }
 
 func isDeleteNeeded(filename string) bool {
-	return strings.HasPrefix(filename, DELETE_PREFIX)
+	return strings.HasPrefix(filename, helpers.DELETE_PREFIX)
 }
 
 func (checker *InitialChecker) Check(ctx context.Context) {

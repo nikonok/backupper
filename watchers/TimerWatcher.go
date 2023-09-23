@@ -25,40 +25,69 @@ type TimerWatcher struct {
 }
 
 func CreateTimerWatcher(hotFolderPath string, workChan chan string, tickerDuration time.Duration, logger log.Logger) Watcher {
-	return &TimerWatcher{
+	watcher := &TimerWatcher{
 		logger:         logger,
 		hotFolderPath:  hotFolderPath,
 		workChan:       workChan,
 		tickerDuration: tickerDuration,
 		fileCollection: make(map[string]fileInfo),
 	}
+	watcher.initialScan()
+	return watcher
+}
+
+func (watcher *TimerWatcher) initialScan() {
+	files, err := os.ReadDir(watcher.hotFolderPath)
+	if err != nil {
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
+	}
+
+	for _, file := range files {
+		if file.Type().IsRegular() {
+			fInfo, err := file.Info()
+			if err != nil {
+				watcher.logger.LogError("Watcher fatal: " + err.Error())
+			}
+			watcher.fileCollection[fInfo.Name()] = fileInfo{
+				ModificationTime: fInfo.ModTime(),
+			}
+		}
+	}
 }
 
 func (watcher *TimerWatcher) watch(ctx context.Context) {
-	watcher.logger.LogDebug("Starting Watcher")
+	watcher.logger.LogDebug("Starting TimerWatcher")
 
 	watcher.ticker = time.NewTicker(watcher.tickerDuration)
 	watcher.runLoop(ctx)
 }
 
 func (watcher *TimerWatcher) runLoop(ctx context.Context) {
-	for range watcher.ticker.C {
-
-		files, err := os.ReadDir(watcher.hotFolderPath)
-		if err != nil {
-			watcher.logger.LogError("Watcher fatal: " + err.Error())
+	for {
+		select {
+		case <-ctx.Done():
+			watcher.logger.LogDebug("Stopping SysCallWatcher")
+			return
+		case <-watcher.ticker.C:
+			watcher.processDir()
 		}
+	}
+}
 
-		for _, file := range files {
-			if file.Type().IsRegular() {
-				watcher.processFile(file)
-			}
+func (watcher *TimerWatcher) processDir() {
+	files, err := os.ReadDir(watcher.hotFolderPath)
+	if err != nil {
+		watcher.logger.LogError("Watcher fatal: " + err.Error())
+	}
+
+	for _, file := range files {
+		if file.Type().IsRegular() {
+			watcher.processFile(file)
 		}
 	}
 }
 
 func (watcher *TimerWatcher) processFile(file fs.DirEntry) {
-
 	fInfo, err := file.Info()
 	if err != nil {
 		watcher.logger.LogError("Watcher fatal: " + err.Error())

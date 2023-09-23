@@ -9,11 +9,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/nikonok/backupper/helpers"
 	log "github.com/nikonok/backupper/logger"
-)
-
-const (
-	BUFFER_SIZE = 4096
 )
 
 type SysCallWatcher struct {
@@ -30,12 +27,12 @@ func CreateSysCallWatcher(hotFolderPath string, workChan chan string, logger log
 		logger:        logger,
 		hotFolderPath: hotFolderPath,
 		workChan:      workChan,
-		buf:           make([]byte, BUFFER_SIZE),
+		buf:           make([]byte, helpers.BUFFER_SIZE),
 	}
 }
 
 func (watcher *SysCallWatcher) watch(ctx context.Context) {
-	watcher.logger.LogDebug("Starting Watcher")
+	watcher.logger.LogDebug("Starting SysCallWatcher")
 
 	var err error
 	watcher.fd, err = syscall.InotifyInit1(syscall.IN_NONBLOCK)
@@ -58,7 +55,7 @@ func (watcher *SysCallWatcher) runLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			watcher.logger.LogDebug("Stopping Watcher")
+			watcher.logger.LogDebug("Stopping SysCallWatcher")
 			return
 		default:
 			n, err := syscall.Read(watcher.fd, watcher.buf[:])

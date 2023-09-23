@@ -9,3 +9,7 @@ clean_files:
 .PHONY: compare_files
 compare_files:
 	./compareFiles.sh ./hot ./backup
+
+.PHONY: build
+build:
+	go build -o main cmd/*

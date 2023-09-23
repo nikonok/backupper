@@ -26,7 +26,7 @@ func CreateEventWatcher(hotFolderPath string, workChan chan string, logger log.L
 }
 
 func (watcher *EventWatcher) watch(ctx context.Context) {
-	watcher.logger.LogDebug("Starting Watcher")
+	watcher.logger.LogDebug("Starting EventWatcher")
 
 	var err error
 	watcher.fsWatcher, err = fsnotify.NewWatcher()
@@ -48,7 +48,7 @@ func (watcher *EventWatcher) runLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			watcher.logger.LogDebug("Stopping Watcher")
+			watcher.logger.LogDebug("Stopping EventWatcher")
 			return
 		case event, ok := <-watcher.fsWatcher.Events:
 			if !ok {

@@ -13,7 +13,8 @@ const (
 type DualLogger struct {
 	logLevel LogLevel
 
-	logChan  chan string
+	logChan           chan string
+	waitingClosedChan chan bool
 
 	stdLog  *log.Logger
 	fileLog *log.Logger
@@ -26,10 +27,11 @@ func CreateDualLogger(filePath string, logLevel LogLevel) (Logger, error) {
 	}
 
 	logger := &DualLogger{
-		logLevel: logLevel,
-		logChan: make(chan string, LOG_CHAN_SIZE),
-		stdLog:  log.New(os.Stdout, "", log.LstdFlags),
-		fileLog: log.New(file, "", log.LstdFlags),
+		logLevel:          logLevel,
+		waitingClosedChan: make(chan bool),
+		logChan:           make(chan string, LOG_CHAN_SIZE),
+		stdLog:            log.New(os.Stdout, "", log.LstdFlags),
+		fileLog:           log.New(file, "", log.LstdFlags),
 	}
 
 	go logger.background()
@@ -42,11 +44,14 @@ func (logger *DualLogger) background() {
 		logger.stdLog.Print(msg)
 		logger.fileLog.Print(msg)
 	}
+	logger.waitingClosedChan <- true
 }
 
 // Warning: not thread safe!
 func (logger *DualLogger) Close() error {
 	close(logger.logChan)
+
+	<-logger.waitingClosedChan
 
 	if file, ok := logger.fileLog.Writer().(*os.File); ok {
 		return file.Close()
@@ -60,13 +65,13 @@ func makePrefix(msg string, logLevel LogLevel) string {
 }
 
 func (logger *DualLogger) log(msg string, logLevel LogLevel) {
-	if(logLevel < logger.logLevel) {
+	if logLevel < logger.logLevel {
 		return
 	}
 
 	logger.logChan <- makePrefix(msg, logLevel)
-	
-	if(logLevel == Error) {
+
+	if logLevel == Error {
 		logger.Close()
 		os.Exit(1)
 	}

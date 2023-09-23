@@ -4,11 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/nikonok/backupper/helpers"
 	log "github.com/nikonok/backupper/logger"
-)
-
-const (
-	DELETE_PREFIX = "delete_"
 )
 
 type operationType int
@@ -43,7 +40,7 @@ func CreateController(workChan, copyChan, deleteChan chan string, logger log.Log
 		copyChan:   copyChan,
 		deleteChan: deleteChan,
 
-		resultChan: make(chan string),
+		resultChan: make(chan string, helpers.RESULT_CHAN_SIZE),
 
 		fileOngoing: make(map[string]*fileOperation),
 	}
@@ -73,8 +70,8 @@ func (controller *Controller) Run(ctx context.Context) {
 
 func (controller *Controller) handleWork(work string) {
 	var opType operationType
-	if strings.HasPrefix(work, DELETE_PREFIX) {
-		work = strings.TrimPrefix(work, DELETE_PREFIX)
+	if strings.HasPrefix(work, helpers.DELETE_PREFIX) {
+		work = strings.TrimPrefix(work, helpers.DELETE_PREFIX)
 		opType = Delete
 		controller.logger.LogDebug("Got delete work for: " + work)
 	} else {
