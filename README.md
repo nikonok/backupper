@@ -7,6 +7,7 @@ Welcome to Backupper! The app for making backup easy and fast!
 - [Backup mode](#backup-mode)
 - [View logs mode](#view-logs-mode)
 - [Testing](#testing)
+- [Docker](#docker)
 - [Watchers](#watchers)
 
 ## Features
@@ -76,7 +77,7 @@ Bash scripts used:
 * `compareFiles.sh` - compares files in given dirs
 * `scheduleDelete.sh` - creates file `delete_ISODATETIME_` for given file and sets date in filename for `now + 5 sec`
 
-# Docker
+## Docker
 
 If you don't have Linux, but you want to try this awesome app, try our simple Dockerfile!
 
