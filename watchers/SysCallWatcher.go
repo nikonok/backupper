@@ -45,7 +45,6 @@ func (watcher *SysCallWatcher) watch(ctx context.Context) {
 	if err != nil {
 		watcher.logger.LogError("Watcher fatal: " + err.Error())
 	}
-
 	defer syscall.InotifyRmWatch(watcher.fd, uint32(wd))
 
 	watcher.runLoop(ctx)

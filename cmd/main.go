@@ -16,11 +16,18 @@ import (
 	"github.com/nikonok/backupper/workers"
 )
 
+func createDirsIfNeeded(appCfg *helpers.AppConfig) {
+	helpers.CreateDirIfNotExists(appCfg.HotFolderPath)
+	helpers.CreateDirIfNotExists(appCfg.BackupFolderPath)
+}
+
 func main() {
 	appCfg := CreateConfig()
 
-	// Create logger
-	logger, err := log.CreateDualLogger(appCfg.LoggerFilePath, log.Debug)
+	createDirsIfNeeded(appCfg)
+
+	// create logger
+	logger, err := log.CreateDualLogger(appCfg.LoggerFilePath, appCfg.LogLevel)
 	if err != nil {
 		fmt.Println("Cannot init logger")
 		panic(err)
@@ -44,6 +51,7 @@ func main() {
 		cancel()
 	}()
 
+	// switch modes
 	switch appCfg.Mode {
 	case helpers.Default:
 		runBackup(ctx, appCfg, logger)
