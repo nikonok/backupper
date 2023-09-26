@@ -1,7 +1,7 @@
 SCRIPTS_DIR=scripts
 
 .PHONY:all
-all: build
+all: install_deps build
 
 .PHONY: create_files
 create_files:
@@ -19,9 +19,12 @@ compare_files:
 create_scheduled:
 	${SCRIPTS_DIR}/scheduleDelete.sh hot file_1
 
+.PHONY: install_deps
+install_deps:
+	go mod download
+
 .PHONY: build
 build:
-	go mod download
 	go build -o main cmd/*
 
 .PHONY: docker
