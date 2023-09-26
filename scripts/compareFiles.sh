@@ -15,13 +15,16 @@ if [ ! -d "$source_dir" ] || [ ! -d "$backup_dir" ]; then
     exit 1
 fi
 
+was_difference=0
+
 # Loop through each file in the source directory and compare it to the file in the backup directory
-find "$source_dir" -type f -print0 | while IFS= read -r -d '' file; do
+while IFS= read -r -d '' file; do
     rel_path="${file#$source_dir/}"
     backup_file="$backup_dir/$rel_path.bak"
 
     if [ ! -f "$backup_file" ]; then
         echo "Missing in backup: $rel_path"
+        was_difference=1
         continue
     fi
 
@@ -29,7 +32,9 @@ find "$source_dir" -type f -print0 | while IFS= read -r -d '' file; do
     if [ $? -ne 0 ]; then
         echo "Difference found for: $rel_path"
         echo "$diff_output"
+        was_difference=1
     fi
-done
+done < <(find "$source_dir" -type f -print0)
 
 echo "Check complete."
+exit $was_difference

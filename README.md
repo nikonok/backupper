@@ -70,12 +70,16 @@ Welcome to Backupper! The app for making backup easy and fast!
 
 # create scheduled deletion of file_1
 > make create_scheduled
+
+# run Go UT and run simple end-to-end test
+> make test
 ```
 
-Bash scripts used:
+Bash scripts from `./scripts` used:
 * `createFiles.sh` - creates given amount of files in given dir with names `file_<number>`
 * `compareFiles.sh` - compares files in given dirs
 * `scheduleDelete.sh` - creates file `delete_ISODATETIME_` for given file and sets date in filename for `now + 5 sec`
+* `test.sh` - run all binary and already mentioned scripts
 
 ## Docker
 

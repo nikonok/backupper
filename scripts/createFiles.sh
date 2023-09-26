@@ -20,7 +20,7 @@ fi
 # Create the specified number of files with the given size
 for (( i=1; i<=num_files; i++ )); do
     file_path="$dir/file_$i"
-    dd if=/dev/zero of=$file_path bs=1M count=$file_size 2>/dev/null
+    dd if=/dev/urandom of=$file_path bs=1M count=$file_size 2>/dev/null
     echo "Created $file_path with size ${file_size}MB"
 done
 
